@@ -11,7 +11,7 @@
         h1 { text-align: center; color: #2c3e50; font-size: 22px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
-        select, input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+        select, input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;}
         button { width: 100%; padding: 14px; background-color: #27ae60; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 15px; }
         button:disabled { background-color: #95a5a6; }
         .result-box { display: none; margin-top: 25px; padding: 20px; border-radius: 10px; background-color: #e8f8f5; border: 1px solid #a3e4d7; }
@@ -26,7 +26,7 @@
 
 <div class="container">
     <h1>🤖 برآوردگر هوشمند (مبتنی بر مرورگر)</h1>
-    <div id="status">در حال بارگذاری مدل...</div>
+    <div id="status">در حال بارگذاری مدل و تنظیمات...</div>
     
     <form id="predictionForm" style="display: none;">
         <div class="form-group"><label>ماژول:</label><select id="module"></select></div>
@@ -39,11 +39,11 @@
     </form>
 
     <div id="resultBox" class="result-box">
-        <h3>🎯 نتیجه پیش‌بینی</h3>
+        <h3 style="text-align:center; margin-top:0;">🎯 نتیجه پیش‌بینی</h3>
         <div class="metrics">
-            <div class="metric"><span>خوش‌بینانه</span><strong id="resP10">-</strong> ساعت</div>
-            <div class="metric"><span>واقع‌گرایانه</span><strong id="resP50">-</strong> ساعت</div>
-            <div class="metric"><span>بدبینانه</span><strong id="resP90">-</strong> ساعت</div>
+            <div class="metric"><span>خوش‌بینانه (P10)</span><strong id="resP10">-</strong> ساعت</div>
+            <div class="metric"><span>واقع‌گرایانه (P50)</span><strong id="resP50">-</strong> ساعت</div>
+            <div class="metric"><span>بدبینانه (P90)</span><strong id="resP90">-</strong> ساعت</div>
         </div>
     </div>
 </div>
@@ -53,36 +53,47 @@
     const form = document.getElementById('predictionForm');
     const status = document.getElementById('status');
 
-    // 1. بارگذاری مدل و گزینه‌ها
     async function init() {
         try {
-            // خواندن لیست‌ها
+            // 1. خواندن فایل تنظیمات
+            status.innerText = "در حال دریافت تنظیمات...";
             const res = await fetch('options.json');
+            if (!res.ok) throw new Error("فایل options.json پیدا نشد.");
             const options = await res.json();
             
+            // بررسی اینکه آیا کلیدها با s جمع بسته شده‌اند یا خیر
+            const getOptions = (key) => {
+                if (options[key + 's']) return options[key + 's'];
+                if (options[key]) return options[key];
+                return ["نامشخص"]; // اگر کلید پیدا نشد، یک مقدار پیش‌فرض بگذار
+            };
+
             ['module', 'assignee', 'workload', 'task_type', 'priority'].forEach(field => {
                 const select = document.getElementById(field);
-                options[field + 's'].forEach(item => {
+                select.innerHTML = ''; // پاک کردن قبلی‌ها
+                const items = getOptions(field);
+                items.forEach(item => {
                     let option = new Option(item, item);
                     select.add(option);
                 });
             });
 
-            // بارگذاری مدل ONNX
+            // 2. بارگذاری مدل ONNX
+            status.innerText = "در حال بارگذاری مدل یادگیری ماشین...";
             session = await ort.InferenceSession.create('model.onnx');
             
             status.style.display = 'none';
             form.style.display = 'block';
         } catch (e) {
-            status.innerText = "خطا در بارگذاری مدل: " + e;
-            status.style.color = "red";
+            console.error(e);
+            status.innerHTML = `<b style="color:red">خطا در راه‌اندازی:</b><br>${e.message}<br><br><small>مطمئن شوید فایل‌های model.onnx و options.json در گیت‌هاب آپلود شده‌اند.</small>`;
         }
     }
 
-    // 2. ارسال درخواست و پیش‌بینی در مرورگر
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         document.getElementById('submitBtn').innerText = 'در حال محاسبه...';
+        document.getElementById('submitBtn').disabled = true;
 
         try {
             const inputs = {
@@ -94,27 +105,24 @@
                 estimated_h: [parseFloat(document.getElementById('estimated_h').value)]
             };
 
-            // تبدیل ورودی‌ها به فرمت Tensor
             const feeds = {};
             for (const key in inputs) {
                 if (key === 'estimated_h') {
-                    feeds[key] = new ort.Tensor('float32', inputs[key], [1, 1]);
+                    feeds[key] = new ort.Tensor('float32', new Float32Array(inputs[key]), [1, 1]);
                 } else {
                     feeds[key] = new ort.Tensor('string', inputs[key], [1, 1]);
                 }
             }
 
-            // اجرای مدل
             const results = await session.run(feeds);
+            const outputData = Array.from(results[Object.keys(results)[0]].data);
             
-            // Random Forest در ONNX خروجی‌های متغیر دارد. برای سادگی میانگین را می‌گیریم.
-            const outputData = results[Object.keys(results)[0]].data;
-            
-            // محاسبه درصدها (تقریبی)
+            // مرتب‌سازی خروجی‌ها برای محاسبه درصدها
             outputData.sort((a, b) => a - b);
-            const p10 = outputData[Math.floor(outputData.length * 0.1)];
-            const p50 = outputData[Math.floor(outputData.length * 0.5)];
-            const p90 = outputData[Math.floor(outputData.length * 0.9)];
+            
+            const p10 = outputData[Math.floor(outputData.length * 0.1)] || 0;
+            const p50 = outputData[Math.floor(outputData.length * 0.5)] || 0;
+            const p90 = outputData[Math.floor(outputData.length * 0.9)] || 0;
 
             document.getElementById('resultBox').style.display = 'block';
             document.getElementById('resP10').innerText = Math.max(0, p10).toFixed(1);
@@ -123,8 +131,11 @@
 
         } catch (error) {
             alert("خطا در پیش‌بینی: " + error.message);
+            console.error(error);
+        } finally {
+            document.getElementById('submitBtn').innerText = 'تحلیل و پیش‌بینی (بدون سرور)';
+            document.getElementById('submitBtn').disabled = false;
         }
-        document.getElementById('submitBtn').innerText = 'تحلیل و پیش‌بینی (بدون سرور)';
     });
 
     init();
