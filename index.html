@@ -60,6 +60,7 @@
         <div class="assumptions" id="assumptionsBox"></div>
     </div>
 </div>
+
 <script>
     let session;
     const form = document.getElementById('predictionForm');
@@ -121,14 +122,8 @@
             }
 
             const results = await session.run(feeds);
-            
-            // خواندن خروجی به فرمت ماتریس (برای تمام درخت‌ها)
             const outputKey = session.outputNames[0];
-            const outputTensor = results[outputKey];
-            let outputData = Array.from(outputTensor.data);
-            
-            // اگر خروجی به صورت ماتریس (N,1) بود، آن را به لیست مسطح تبدیل می‌کنیم
-            // در مدل ما 150 درخت داریم، پس خروجی 150 عدد خواهد بود
+            const outputData = Array.from(results[outputKey].data);
             outputData.sort((a, b) => a - b);
             
             const p10 = outputData[Math.floor(outputData.length * 0.1)] || 0;
@@ -136,9 +131,19 @@
             const p90 = outputData[Math.floor(outputData.length * 0.9)] || 0;
             const est_h = parseFloat(document.getElementById('estimated_h').value);
 
-            // شبیه‌سازی مونت‌کارلو
-            const onTimeCount = outputData.filter(val => val <= est_h).length;
-            const probOnTime = ((onTimeCount / outputData.length) * 100).toFixed(1);
+            // --- شبیه‌سازی مونت‌کارلو با نویز ---
+            const uncertainty = 0.15; // 15% عدم قطعیت
+            let simulatedOnTime = 0;
+            const totalSimulations = 1000;
+
+            for (let i = 0; i < totalSimulations; i++) {
+                // تولید یک عدد تصادفی بین 0.85 تا 1.15
+                const noise = 1 + (Math.random() * uncertainty * 2 - uncertainty);
+                const simulatedTime = p50 * noise;
+                if (simulatedTime <= est_h) simulatedOnTime++;
+            }
+            
+            const probOnTime = ((simulatedOnTime / totalSimulations) * 100).toFixed(1);
 
             document.getElementById('resultBox').style.display = 'block';
             document.getElementById('resP10').innerText = Math.max(0, p10).toFixed(1);
@@ -162,7 +167,7 @@
             document.getElementById('assumptionsBox').innerHTML = `
                 <strong>📌 تحلیل ریسک:</strong><br>
                 سطح ریسک تاخیر: <b>${risk}</b><br>
-                این تحلیل بر اساس رفتار تاریخی مدل در پیش‌بینی تسک‌های مشابه محاسبه شده است.
+                این تحلیل با در نظر گرفتن عدم قطعیت (نویز) و بر اساس رفتار تاریخی مدل محاسبه شده است.
             `;
 
         } catch (error) {
