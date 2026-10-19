@@ -131,19 +131,23 @@
             const p90 = outputData[Math.floor(outputData.length * 0.9)] || 0;
             const est_h = parseFloat(document.getElementById('estimated_h').value);
 
-            // --- شبیه‌سازی مونت‌کارلو با نویز ---
-            const uncertainty = 0.15; // 15% عدم قطعیت
+            // --- شبیه‌سازی مونت‌کارلو با نویز تصادفی ---
+            // این بخش باعث می‌شود درصد بین 0 تا 100 تغییر کند
+            const uncertainty = 0.20; // 20٪ عدم قطعیت (نویز)
             let simulatedOnTime = 0;
-            const totalSimulations = 1000;
+            const totalSimulations = 2000; // 2000 بار شبیه‌سازی
 
             for (let i = 0; i < totalSimulations; i++) {
-                // تولید یک عدد تصادفی بین 0.85 تا 1.15
+                // تولید یک نویز تصادفی بین -20% تا +20%
                 const noise = 1 + (Math.random() * uncertainty * 2 - uncertainty);
                 const simulatedTime = p50 * noise;
-                if (simulatedTime <= est_h) simulatedOnTime++;
+                if (simulatedTime <= est_h) {
+                    simulatedOnTime++;
+                }
             }
             
-            const probOnTime = ((simulatedOnTime / totalSimulations) * 100).toFixed(1);
+            // محاسبه احتمال
+            let probOnTime = ((simulatedOnTime / totalSimulations) * 100).toFixed(1);
 
             document.getElementById('resultBox').style.display = 'block';
             document.getElementById('resP10').innerText = Math.max(0, p10).toFixed(1);
@@ -165,9 +169,9 @@
             else if (probOnTime < 80) risk = "متوسط";
 
             document.getElementById('assumptionsBox').innerHTML = `
-                <strong>📌 تحلیل ریسک:</strong><br>
+                <strong>📌 تحلیل ریسک (مونت‌کارلو):</strong><br>
                 سطح ریسک تاخیر: <b>${risk}</b><br>
-                این تحلیل با در نظر گرفتن عدم قطعیت (نویز) و بر اساس رفتار تاریخی مدل محاسبه شده است.
+                این تحلیل با در نظر گرفتن ۲۰٪ عدم قطعیت در پیش‌بینی مدل محاسبه شده است.
             `;
 
         } catch (error) {
